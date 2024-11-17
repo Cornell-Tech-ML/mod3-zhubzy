@@ -340,6 +340,7 @@ def tensor_reduce(
         reduce_value: float,
     ) -> None:
         # Shared memory for partial results
+        BLOCK_DIM = 1024
         
         cache = cuda.shared.array(BLOCK_DIM, numba.float64)
         
