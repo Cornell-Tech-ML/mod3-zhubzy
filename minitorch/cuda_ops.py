@@ -342,28 +342,49 @@ def tensor_reduce(
         reduce_dim: int,
         reduce_value: float,
     ) -> None:
-        BLOCK_DIM = 1024
-        cache = cuda.shared.array(BLOCK_DIM, numba.float64)
+        # Shared memory for partial results
+        cache = cuda.shared.array(THREADS_PER_BLOCK, numba.float64)
         out_index = cuda.local.array(MAX_DIMS, numba.int32)
-        out_pos = cuda.blockIdx.x
-        pos = cuda.threadIdx.x
-
-        if pos == 0:
-            cache[out_pos] = reduce_value
+        
+        # Calculate grid and block positions
+        block_id = cuda.blockIdx.x
+        thread_id = cuda.threadIdx.x
+        grid_size = cuda.gridDim.x * THREADS_PER_BLOCK
+        
+        # Initialize shared memory
+        cache[thread_id] = reduce_value
         cuda.syncthreads()
-
-        if pos < out_size:
+        
+        # Process multiple elements per thread using grid-stride loop
+        pos = block_id * THREADS_PER_BLOCK + thread_id
+        while pos < out_size:
             to_index(pos, out_shape, out_index)
-            out_pos = index_to_position(out_index, out_strides)
             initial_a_pos = index_to_position(out_index, a_strides)
-
+            
+            # Local accumulator to reduce shared memory access
+            local_sum = reduce_value
+            
+            # Coalesced memory access pattern
             for i in range(a_shape[reduce_dim]):
-                cache[out_pos] = fn(cache[out_pos],
-                                  a_storage[initial_a_pos + i * a_strides[reduce_dim]])
-
+                curr_pos = initial_a_pos + i * a_strides[reduce_dim]
+                local_sum = fn(local_sum, a_storage[curr_pos])
+            
+            cache[thread_id] = local_sum
+            pos += grid_size
+        
         cuda.syncthreads()
-        if pos == 0 and cuda.blockIdx.x < out_size:
-            out[cuda.blockIdx.x] = cache[cuda.blockIdx.x]
+        
+        # Parallel reduction in shared memory
+        stride = THREADS_PER_BLOCK // 2
+        while stride > 0:
+            if thread_id < stride:
+                cache[thread_id] = fn(cache[thread_id], cache[thread_id + stride])
+            cuda.syncthreads()
+            stride //= 2
+        
+        # Write result for this block
+        if thread_id == 0 and block_id < out_size:
+            out[block_id] = cache[0]
 
     return jit(_reduce)  # type: ignore
 
