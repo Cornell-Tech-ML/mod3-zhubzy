@@ -343,28 +343,40 @@ def tensor_reduce(
         
         cache = cuda.shared.array(BLOCK_DIM, numba.float64)
         
-        # Get thread and block position
-        tid = cuda.threadIdx.x
-        bid = cuda.blockIdx.x
+        # Local array for output indices
+        out_index = cuda.local.array(MAX_DIMS, numba.int32)
         
-        # Calculate input and output positions directly
-        if tid < a_shape[reduce_dim]:
-            # Initialize cache with first element
-            if tid == 0:
-                cache[bid] = a_storage[bid * a_strides[0]]
+        # Get block and thread positions
+        block_pos = cuda.blockIdx.x
+        thread_pos = cuda.threadIdx.x
+        
+        # Initialize cache for this block
+        if thread_pos == 0:
+            cache[block_pos] = reduce_value
+        
+        # Ensure all threads have initialized cache
+        cuda.syncthreads()
+        
+        # Process only valid output positions
+        if thread_pos < out_size:
+            # Convert output position to indices
+            to_index(thread_pos, out_shape, out_index)
             
-            # Perform reduction
-            pos = bid * a_strides[0] + tid * a_strides[reduce_dim]
+            # Calculate output and input positions
+            out_pos = index_to_position(out_index, out_strides)
+            initial_input_pos = index_to_position(out_index, a_strides)
+            
+            # Perform reduction along specified dimension
+            for i in range(a_shape[reduce_dim]):
+                input_pos = initial_input_pos + i * a_strides[reduce_dim]
+                cache[out_pos] = fn(cache[out_pos], a_storage[input_pos])
+            
+            # Ensure all reductions are complete
             cuda.syncthreads()
             
-            # Each thread updates the cache with its reduction
-            cache[bid] = fn(cache[bid], a_storage[pos])
-            
-            cuda.syncthreads()
-            
-            # Write final result
-            if tid == 0 and bid < out.size:
-                out[bid] = cache[bid]
+            # Write final result to output
+            if thread_pos == 0 and block_pos < out_size:
+                out[block_pos] = cache[block_pos]
 
     return jit(_reduce)  # type: ignore
 
