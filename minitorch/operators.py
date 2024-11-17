@@ -13,7 +13,7 @@ def add(a: float, b: float) -> float:
 
 def eq(a: float, b: float) -> float:
     """Check if two numbers are equal"""
-    return float(a == b)
+    return 1.0 if a == b else 0.0
 
 
 def id(x: float) -> float:
@@ -35,7 +35,7 @@ def inv(x: float) -> float:
 
 def lt(a: float, b: float) -> float:
     """Check if a is less than b"""
-    return float(a < b)
+    return 1.0 if a < b else 0.0
 
 
 def max(a: float, b: float) -> float:

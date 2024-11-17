@@ -173,8 +173,11 @@ def tensor_map(
         out_index = cuda.local.array(MAX_DIMS, numba.int32)
         in_index = cuda.local.array(MAX_DIMS, numba.int32)
         i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-        # TODO: Implement for Task 3.3.
-        raise NotImplementedError("Need to implement for Task 3.3")
+        if i < out_size:
+            to_index(i, out_shape, out_index)
+            to_index(i, in_shape, in_index)
+            out[index_to_position(out_index, out_strides)] = fn(in_storage[index_to_position(in_index, in_strides)])
+        
 
     return cuda.jit()(_map)  # type: ignore
 
@@ -216,8 +219,14 @@ def tensor_zip(
         b_index = cuda.local.array(MAX_DIMS, numba.int32)
         i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
 
-        # TODO: Implement for Task 3.3.
-        raise NotImplementedError("Need to implement for Task 3.3")
+        if i < out_size:
+            to_index(i, out_shape, out_index)
+            to_index(i, a_shape, a_index)
+            to_index(i, b_shape, b_index)
+            out[index_to_position(out_index, out_strides)] = fn(
+            a_storage[index_to_position(a_index, a_strides)],
+            b_storage[index_to_position(b_index, b_strides)],
+            )
 
     return cuda.jit()(_zip)  # type: ignore
 
@@ -249,8 +258,17 @@ def _sum_practice(out: Storage, a: Storage, size: int) -> None:
     i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
     pos = cuda.threadIdx.x
 
-    # TODO: Implement for Task 3.3.
-    raise NotImplementedError("Need to implement for Task 3.3")
+    if i < size:
+        cache[pos] = a[i]
+    else:
+        cache[pos] = 0.0
+    cuda.syncthreads()
+
+    if pos == 0:
+        sum = 0.0
+        for j in range(BLOCK_DIM):
+            sum += cache[j]
+        out[cuda.blockIdx.x] = sum
 
 
 jit_sum_practice = cuda.jit()(_sum_practice)
@@ -300,8 +318,23 @@ def tensor_reduce(
         out_pos = cuda.blockIdx.x
         pos = cuda.threadIdx.x
 
-        # TODO: Implement for Task 3.3.
-        raise NotImplementedError("Need to implement for Task 3.3")
+        if out_pos < out_size:
+            to_index(out_pos, out_shape, out_index)
+            out_pos = index_to_position(out_index, out_strides)
+            start = out_pos * a_shape[reduce_dim]
+            end = start + a_shape[reduce_dim]
+            step = cuda.blockDim.x
+
+            for i in range(start + pos, end, step):
+                cache[pos] = a_storage[i] if i < end else reduce_value
+                cuda.syncthreads()
+
+            if pos == 0:
+                temp = reduce_value
+                for j in range(step):
+                    temp = fn(temp, cache[j])
+                    out[out_pos] = temp
+            cuda.syncthreads()
 
     return jit(_reduce)  # type: ignore
 

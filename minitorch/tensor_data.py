@@ -46,8 +46,10 @@ def index_to_position(index: Index, strides: Strides) -> int:
         Position in storage
 
     """
-    return sum([index[i] * strides[i] for i in range(len(index))])
-
+    position = 0
+    for ind, stride in zip(index, strides):
+        position += ind * stride
+    return position
 
 def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
     """Convert an `ordinal` to an index in the `shape`.
@@ -62,9 +64,11 @@ def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
         out_index : return index corresponding to position.
 
     """
+    cur_ord = ordinal + 0
     for i in range(len(shape) - 1, -1, -1):
-        out_index[i] = ordinal % shape[i]
-        ordinal //= shape[i]
+        sh = shape[i]
+        out_index[i] = int(cur_ord % sh)
+        cur_ord = cur_ord // sh
 
 
 def broadcast_index(
@@ -88,17 +92,12 @@ def broadcast_index(
         None
 
     """
-    if len(big_shape) < len(shape):
-        raise ValueError("big_shape must have at least as many dimensions as shape")
-
-    l1 = len(big_shape)
-    l2 = len(shape)
-    diff_l = l1 - l2
-    for i in range(l2):
-        if shape[i] == 1:
-            out_index[i] = 0
+    for i, s in enumerate(shape):
+        if s > 1:
+            out_index[i] = big_index[i + (len(big_shape) - len(shape))]
         else:
-            out_index[i] = big_index[diff_l + i]
+            out_index[i] = 0
+    return None
 
 
 def shape_broadcast(shape1: UserShape, shape2: UserShape) -> UserShape:
