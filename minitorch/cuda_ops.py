@@ -170,14 +170,26 @@ def tensor_map(
         in_shape: Shape,
         in_strides: Strides,
     ) -> None:
+        THREADS_PER_BLOCK = 256
+        
+        # Calculate grid size to ensure full coverage
+        grid_size = (out_size + THREADS_PER_BLOCK - 1) // THREADS_PER_BLOCK
+        
+        # Process multiple elements per thread for better work distribution
+        idx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+        stride = cuda.blockDim.x * cuda.gridDim.x
+        
         out_index = cuda.local.array(MAX_DIMS, numba.int32)
         in_index = cuda.local.array(MAX_DIMS, numba.int32)
-        i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-        if i < out_size:
-            to_index(i, out_shape, out_index)
-            to_index(i, in_shape, in_index)
-            out[index_to_position(out_index, out_strides)] = fn(in_storage[index_to_position(in_index, in_strides)])
         
+        # Each thread processes multiple elements
+        while idx < out_size:
+            to_index(idx, out_shape, out_index)
+            to_index(idx, in_shape, in_index)
+            out[index_to_position(out_index, out_strides)] = fn(
+                in_storage[index_to_position(in_index, in_strides)]
+            )
+            idx += stride
 
     return cuda.jit()(_map)  # type: ignore
 
