@@ -476,58 +476,73 @@ def _tensor_matrix_multiply(
     """CUDA tensor matrix multiply function."""
     BLOCK_SIZE = 32  
     
-    # Shared memory for storing blocks of input matrices
-    a_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=numba.float32)
-    b_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=numba.float32)
-    
-    # Get the thread indices
+    # Shared memory for tiles
+    a_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=float32)
+    b_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=float32)
+
+    # Thread indices
     tx = cuda.threadIdx.x
     ty = cuda.threadIdx.y
     bx = cuda.blockIdx.x
     by = cuda.blockIdx.y
-    
-    # Calculate the row and column this thread is responsible for
+    bz = cuda.blockIdx.z
+
+    # Calculate the position in the output
     row = by * BLOCK_SIZE + ty
     col = bx * BLOCK_SIZE + tx
+    batch = bz
+
+    # Get matrix dimensions for the current batch
+    matrix_dim = a_shape[-1]  # Common dimension between matrices
     
-    # Initialize the accumulator for this thread
+    # Initialize accumulator
     acc = 0.0
-    
+
     # Calculate number of blocks needed
-    n_blocks = (a_shape[-1] + BLOCK_SIZE - 1) // BLOCK_SIZE
-    
-    # For each block
+    n_blocks = (matrix_dim + BLOCK_SIZE - 1) // BLOCK_SIZE
+
+    # For each sub-block
     for block in range(n_blocks):
-        # Load data into shared memory
+        # Calculate indices for loading data
         a_row = row
         a_col = block * BLOCK_SIZE + tx
-        if a_row < a_shape[0] and a_col < a_shape[1]:
-            a_idx = a_row * a_strides[0] + a_col * a_strides[1]
+        b_row = block * BLOCK_SIZE + ty
+        b_col = col
+
+        # Load data into shared memory with boundary checking
+        if a_row < a_shape[-2] and a_col < a_shape[-1]:
+            # Calculate the correct offset for a_storage considering batch dimension
+            a_idx = 0
+            if len(a_shape) == 3:
+                a_idx += batch * a_strides[0]
+            a_idx += a_row * a_strides[-2] + a_col * a_strides[-1]
             a_shared[ty, tx] = a_storage[a_idx]
         else:
             a_shared[ty, tx] = 0.0
-            
-        b_row = block * BLOCK_SIZE + ty
-        b_col = col
-        if b_row < b_shape[0] and b_col < b_shape[1]:
-            b_idx = b_row * b_strides[0] + b_col * b_strides[1]
+
+        if b_row < b_shape[-2] and b_col < b_shape[-1]:
+            # Calculate the correct offset for b_storage considering batch dimension
+            b_idx = 0
+            if len(b_shape) == 3:
+                b_idx += batch * b_strides[0]
+            b_idx += b_row * b_strides[-2] + b_col * b_strides[-1]
             b_shared[ty, tx] = b_storage[b_idx]
         else:
             b_shared[ty, tx] = 0.0
-            
-        # Synchronize threads to ensure all data is loaded
+
+        # Ensure all threads have loaded their data
         cuda.syncthreads()
-        
-        # Compute partial dot product for this block
-        for k in range(BLOCK_SIZE):
+
+        # Compute partial dot product
+        for k in range(min(BLOCK_SIZE, matrix_dim - block * BLOCK_SIZE)):
             acc += a_shared[ty, k] * b_shared[k, tx]
-            
-        # Synchronize before loading next block
+
+        # Synchronize before next iteration
         cuda.syncthreads()
-    
-    # Write result to global memory
-    if row < out_shape[0] and col < out_shape[1]:
-        out_idx = row * out_strides[0] + col * out_strides[1]
+
+    # Write result to global memory if within bounds
+    if row < out_shape[-2] and col < out_shape[-1]:
+        out_idx = batch * out_strides[0] + row * out_strides[1] + col * out_strides[2]
         out[out_idx] = acc
 
 
