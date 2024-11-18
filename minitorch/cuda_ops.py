@@ -343,11 +343,11 @@ def tensor_reduce(
         
         if idx < out_size:
             # Convert output ordinal to index
-            out_index = cuda.local.array(len(out_shape), dtype=numba.int64)
+            out_index = cuda.local.array(len(out_shape), dtype=numba.int32)
             to_index(idx, out_shape, out_index)
             
             # Calculate input position
-            a_index = cuda.local.array(len(a_shape), dtype=numba.int64)
+            a_index = cuda.local.array(len(a_shape), dtype=numba.int32)
             
             # Initialize accumulator based on reduction type
             acc = reduce_value
