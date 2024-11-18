@@ -339,34 +339,35 @@ def tensor_reduce(
         reduce_dim: int,
         reduce_value: float,
     ) -> None:
-        cache = cuda.shared.array(MAX_DIMS, numba.float64)
-
-        # Calculate global thread index
         idx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-        tid = cuda.threadIdx.x
-
-        # Initialize shared memory to the reduce value
-        cache[tid] = reduce_value
-        cuda.syncthreads()
-
-        # Perform reduction by processing elements in the dimension
+        
+        # Allocate space for indices
+        out_index = cuda.local.array(MAX_DIMS, numba.int32)
+        a_index = cuda.local.array(MAX_DIMS, numba.int32)
+        
+        # Handle reduction for each output position
         if idx < out_size:
-            out_index = cuda.local.array(MAX_DIMS, numba.int32)
-            a_index = cuda.local.array(MAX_DIMS, numba.int32)
+            # Convert linear index to tensor index
             to_index(idx, out_shape, out_index)
-            to_index(idx, a_shape, a_index)
-
-            # Iterate over reduction dimension
-            for i in range(a_shape[reduce_dim]):
-                a_index[reduce_dim] = i
+            
+            # Initialize reduction with starting value
+            reduced = reduce_value
+            
+            # Reduce along the specified dimension
+            for j in range(a_shape[reduce_dim]):
+                # Copy output index to input index
+                for i in range(len(out_shape)):
+                    a_index[i] = out_index[i]
+                # Update the reducing dimension index
+                a_index[reduce_dim] = j
+                
+                # Get value from a_storage and reduce
                 pos = index_to_position(a_index, a_strides)
-                cache[tid] = fn(cache[tid], a_storage[pos])
-            cuda.syncthreads()
-
-            # Thread 0 in block writes result
-            if tid == 0:
-                out_pos = index_to_position(out_index, out_strides)
-                out[out_pos] = cache[0]
+                reduced = fn(reduced, a_storage[pos])
+            
+            # Store final reduced value
+            out_pos = index_to_position(out_index, out_strides)
+            out[out_pos] = reduced
 
     return jit(_reduce)  # type: ignore
 
