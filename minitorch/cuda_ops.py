@@ -477,8 +477,8 @@ def _tensor_matrix_multiply(
     BLOCK_SIZE = 32  
     
     # Shared memory for tiles
-    a_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=float32)
-    b_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=float32)
+    a_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=numba.float32)
+    b_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=numba.float32)
 
     # Thread indices
     tx = cuda.threadIdx.x
