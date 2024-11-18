@@ -474,11 +474,11 @@ def _tensor_matrix_multiply(
         None : Fills in `out`
     """
     """CUDA tensor matrix multiply function."""
-    BLOCK_SIZE = 32  # A common block size for matrix operations
+    BLOCK_SIZE = 32  
     
     # Shared memory for storing blocks of input matrices
-    a_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=float32)
-    b_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=float32)
+    a_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=numba.float32)
+    b_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=numba.float32)
     
     # Get the thread indices
     tx = cuda.threadIdx.x
