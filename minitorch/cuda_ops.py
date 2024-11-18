@@ -339,48 +339,34 @@ def tensor_reduce(
         reduce_dim: int,
         reduce_value: float,
     ) -> None:
-        cache = cuda.shared.array(THREADS_PER_BLOCK, numba.float64)
+        cache = cuda.shared.array(MAX_DIMS, numba.float64)
 
+        # Calculate global thread index
         idx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
         tid = cuda.threadIdx.x
 
-        # Compute the index for the output tensor
-        out_index = cuda.local.array(MAX_DIMS, numba.int32)
-        a_index = cuda.local.array(MAX_DIMS, numba.int32)
-
-        if idx < out_size:
-            to_index(idx, out_shape, out_index)
-
-            # Initialize reduction value for this thread
-            reduction_result = reduce_value
-
-            # Iterate over the reduce dimension
-            for i in range(a_shape[reduce_dim]):
-                out_index[reduce_dim] = i
-                to_index(index_to_position(out_index, out_strides), a_shape, a_index)
-                reduction_result = fn(
-                    reduction_result,
-                    a_storage[index_to_position(a_index, a_strides)],
-                )
-
-            # Store the partial result in shared memory
-            cache[tid] = reduction_result
-        else:
-            cache[tid] = reduce_value
-
+        # Initialize shared memory to the reduce value
+        cache[tid] = reduce_value
         cuda.syncthreads()
 
-        # Perform block-wide reduction
-        stride = THREADS_PER_BLOCK // 2
-        while stride > 0:
-            if tid < stride:
-                cache[tid] = fn(cache[tid], cache[tid + stride])
-            cuda.syncthreads()
-            stride //= 2
+        # Perform reduction by processing elements in the dimension
+        if idx < out_size:
+            out_index = cuda.local.array(MAX_DIMS, numba.int32)
+            a_index = cuda.local.array(MAX_DIMS, numba.int32)
+            to_index(idx, out_shape, out_index)
+            to_index(idx, a_shape, a_index)
 
-        # Write final result of block reduction
-        if tid == 0:
-            out[cuda.blockIdx.x] = cache[0]
+            # Iterate over reduction dimension
+            for i in range(a_shape[reduce_dim]):
+                a_index[reduce_dim] = i
+                pos = index_to_position(a_index, a_strides)
+                cache[tid] = fn(cache[tid], a_storage[pos])
+            cuda.syncthreads()
+
+            # Thread 0 in block writes result
+            if tid == 0:
+                out_pos = index_to_position(out_index, out_strides)
+                out[out_pos] = cache[0]
 
     return jit(_reduce)  # type: ignore
 
