@@ -476,7 +476,7 @@ def _tensor_matrix_multiply(
     """CUDA tensor matrix multiply function."""
     BLOCK_DIM = 32
     
-     # Thread and block indexing 
+    # Thread and block indexing 
     i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
     j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
     batch = cuda.blockIdx.z
@@ -496,38 +496,31 @@ def _tensor_matrix_multiply(
     # Initialize accumulator
     acc = numba.float64(0.0)
     
-    # Calculate number of tiles needed
-    num_tiles = (a_shape[2] + BLOCK_DIM - 1) // BLOCK_DIM
-    
-    for tile in range(num_tiles):
+    if i < a_shape[1] and j < b_shape[2]:  # Only compute if within bounds
+        # Single tile for small matrices
         # Reset shared memory
         a_shared[tx, ty] = 0.0
         b_shared[tx, ty] = 0.0
         
-        # Calculate global indices for this tile
-        k_idx = tile * BLOCK_DIM + ty  # Column index for A, row index for B
-        
-        # Load data into shared memory with bounds checking
-        if i < a_shape[1] and k_idx < a_shape[2]:
-            a_idx = batch * a_batch_stride + i * a_strides[1] + k_idx * a_strides[2]
+        # Load into shared memory
+        if ty < a_shape[2]:  # Check bounds for K dimension
+            a_idx = batch * a_batch_stride + i * a_strides[1] + ty * a_strides[2]
             a_shared[tx, ty] = a_storage[a_idx]
         
-        if j < b_shape[2] and tile * BLOCK_DIM + tx < b_shape[1]:
-            b_idx = batch * b_batch_stride + (tile * BLOCK_DIM + tx) * b_strides[1] + j * b_strides[2]
+        if tx < b_shape[1]:  # Check bounds for K dimension
+            b_idx = batch * b_batch_stride + tx * b_strides[1] + j * b_strides[2]
             b_shared[tx, ty] = b_storage[b_idx]
         
-        # Ensure all threads have loaded their data
         cuda.syncthreads()
         
-        # Compute partial dot product for this tile
-        for k in range(min(BLOCK_DIM, a_shape[2] - tile * BLOCK_DIM)):
-            acc += a_shared[tx, k] * b_shared[k, ty]
+        # Compute dot product
+        for k in range(min(BLOCK_DIM, a_shape[2])):
+            if k < a_shape[2]:  # Check bounds for K dimension
+                acc += a_shared[tx, k] * b_shared[k, ty]
         
-        # Ensure computation is complete before next iteration
         cuda.syncthreads()
-    
-    # Write result to global memory if within bounds
-    if i < out_shape[1] and j < out_shape[2]:
+        
+        # Write result
         out_idx = batch * out_strides[0] + i * out_strides[1] + j * out_strides[2]
         out[out_idx] = acc
 
