@@ -370,6 +370,8 @@ def test_bmm(backend: str, data: DataObject) -> None:
     )
     a = data.draw(tensors(backend=shared[backend], shape=(D, A, B)))
     b = data.draw(tensors(backend=shared[backend], shape=(1, B, C)))
+    print("A is ", a)
+    print("B is ", b)
 
     c = a @ b
     c2 = (
@@ -377,4 +379,6 @@ def test_bmm(backend: str, data: DataObject) -> None:
         .sum(2)
         .view(D, A, C)
     )
+    print("Expected is ", c2)
+    print("Got is ", c)
     assert_close_tensor(c, c2)
