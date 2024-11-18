@@ -224,35 +224,33 @@ def tensor_zip(
         b_strides: Strides,
     ) -> None:
 
+                # Get the thread index in the CUDA grid
+        idx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
+        stride = cuda.blockDim.x * cuda.gridDim.x
         
-        # Pre-allocate index arrays for each thread
+        # Create local arrays for index calculations
         out_index = cuda.local.array(MAX_DIMS, numba.int32)
         a_index = cuda.local.array(MAX_DIMS, numba.int32)
         b_index = cuda.local.array(MAX_DIMS, numba.int32)
         
-        # Calculate thread indices and stride for processing multiple elements
-        idx = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-        stride = cuda.blockDim.x * cuda.gridDim.x
-        
-        # Each thread processes multiple elements in a strided pattern
+        # Process multiple elements per thread using striding
         while idx < out_size:
-            # Convert linear index to dimensional indices
+            # Convert linear index to n-dimensional index
             to_index(idx, out_shape, out_index)
-            to_index(idx, a_shape, a_index)
-            to_index(idx, b_shape, b_index)
             
-            # Calculate positions once
+            # Broadcast indices for both input tensors
+            broadcast_index(out_index, out_shape, a_shape, a_index)
+            broadcast_index(out_index, out_shape, b_shape, b_index)
+            
+            # Calculate positions in storage arrays
             out_pos = index_to_position(out_index, out_strides)
             a_pos = index_to_position(a_index, a_strides)
             b_pos = index_to_position(b_index, b_strides)
             
-            # Perform operation and store result
-            out[out_pos] = fn(
-                a_storage[a_pos],
-                b_storage[b_pos]
-            )
+            # Apply the function to corresponding elements
+            out[out_pos] = fn(a_storage[a_pos], b_storage[b_pos])
             
-            # Move to next element for this thread
+            # Move to next element
             idx += stride
 
     return cuda.jit()(_zip)  # type: ignore
