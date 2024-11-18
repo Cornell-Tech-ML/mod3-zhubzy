@@ -25,7 +25,7 @@ tensor1 = tensor([
 ],FastTensorBackend)
 
 
-print("Fast ", tensor1.sum(2))
+print("Fast ", tensor1.sum(2).view(2,2,2))
       
 tensor2 = tensor([
     [
@@ -50,4 +50,4 @@ tensor2 = tensor([
     ]
 ],CudaBackedn)
 
-print("Cuda ", tensor2.sum(2))
+print("Cuda ", tensor2.sum(2).view(2,2,2))
