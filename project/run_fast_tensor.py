@@ -1,4 +1,5 @@
 import random
+import time
 
 import numba
 
@@ -10,9 +11,9 @@ if numba.cuda.is_available():
     GPUBackend = minitorch.TensorBackend(minitorch.CudaOps)
 
 
-def default_log_fn(epoch, total_loss, correct, losses):
+def default_log_fn(epoch, total_loss, correct, losses, time):
     print("Epoch ", epoch, " loss ", total_loss, "correct", correct)
-
+    print("Time ", time)
 
 def RParam(*shape, backend):
     r = minitorch.rand(shape, backend=backend) - 0.5
@@ -47,7 +48,7 @@ class Linear(minitorch.Module):
 
     def forward(self, x):
         # Perform the linear transformation
-        return x @ self.weights.value + self.bias
+        return x @ self.weights.value + self.bias.value
         
 
 class FastTrain:
@@ -69,6 +70,7 @@ class FastTrain:
         losses = []
 
         for epoch in range(max_epochs):
+            start_time = time.time()  # Start time
             total_loss = 0.0
             c = list(zip(data.X, data.y))
             random.shuffle(c)
@@ -84,21 +86,18 @@ class FastTrain:
                 prob = (out * y) + (out - 1.0) * (y - 1.0)
                 loss = -prob.log()
                 (loss / y.shape[0]).sum().view(1).backward()
-
-                total_loss = loss.sum().view(1)[0]
-
-                # Update
                 optim.step()
+                total_loss += loss.sum().item()
 
-            losses.append(total_loss)
-            # Logging
+            end_time = time.time()  # End time
+            epoch_time = end_time - start_time  # Time taken for the epoch
             if epoch % 10 == 0 or epoch == max_epochs:
                 X = minitorch.tensor(data.X, backend=self.backend)
                 y = minitorch.tensor(data.y, backend=self.backend)
                 out = self.model.forward(X).view(y.shape[0])
                 y2 = minitorch.tensor(data.y)
                 correct = int(((out.detach() > 0.5) == y2).sum()[0])
-                log_fn(epoch, total_loss, correct, losses)
+                log_fn(epoch, total_loss, correct, losses, epoch_time)
 
 
 if __name__ == "__main__":
