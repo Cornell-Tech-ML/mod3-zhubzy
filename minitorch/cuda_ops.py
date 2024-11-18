@@ -414,7 +414,6 @@ def _mm_practice(out: Storage, a: Storage, b: Storage, size: int) -> None:
 
     """
     BLOCK_DIM = 32
-    # TODO: Implement for Task 3.3.
     a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
     b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
 
@@ -474,55 +473,62 @@ def _tensor_matrix_multiply(
     Returns:
         None : Fills in `out`
     """
-    a_batch_stride = a_strides[0] if a_shape[0] > 1 else 0
-    b_batch_stride = b_strides[0] if b_shape[0] > 1 else 0
-    # Batch dimension - fixed
-    batch = cuda.blockIdx.z
-
-    BLOCK_DIM = 32
-    a_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
-    b_shared = cuda.shared.array((BLOCK_DIM, BLOCK_DIM), numba.float64)
-
-    # The final position c[i, j]
-    i = cuda.blockIdx.x * cuda.blockDim.x + cuda.threadIdx.x
-    j = cuda.blockIdx.y * cuda.blockDim.y + cuda.threadIdx.y
-
-    # The local position in the block.
-    pi = cuda.threadIdx.x
-    pj = cuda.threadIdx.y
-
-    # Code Plan:
-    # 1) Move across shared dimension by block dim.
-    #    a) Copy into shared memory for a matrix.
-    #    b) Copy into shared memory for b matrix
-    #    c) Compute the dot produce for position c[i, j]
-    # TODO: Implement for Task 3.4.
-    temp = 0.0
-    for k in range(0, a_shape[-1], BLOCK_DIM):
-        if i < out_shape[-2] and (k + pj) < a_shape[-1]:
-            a_shared[pi, pj] = a_storage[
-                index_to_position((batch, i, k + pj), a_strides)
-            ]
+    """CUDA tensor matrix multiply function."""
+    BLOCK_SIZE = 32  # A common block size for matrix operations
+    
+    # Shared memory for storing blocks of input matrices
+    a_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=float32)
+    b_shared = cuda.shared.array(shape=(BLOCK_SIZE, BLOCK_SIZE), dtype=float32)
+    
+    # Get the thread indices
+    tx = cuda.threadIdx.x
+    ty = cuda.threadIdx.y
+    bx = cuda.blockIdx.x
+    by = cuda.blockIdx.y
+    
+    # Calculate the row and column this thread is responsible for
+    row = by * BLOCK_SIZE + ty
+    col = bx * BLOCK_SIZE + tx
+    
+    # Initialize the accumulator for this thread
+    acc = 0.0
+    
+    # Calculate number of blocks needed
+    n_blocks = (a_shape[-1] + BLOCK_SIZE - 1) // BLOCK_SIZE
+    
+    # For each block
+    for block in range(n_blocks):
+        # Load data into shared memory
+        a_row = row
+        a_col = block * BLOCK_SIZE + tx
+        if a_row < a_shape[0] and a_col < a_shape[1]:
+            a_idx = a_row * a_strides[0] + a_col * a_strides[1]
+            a_shared[ty, tx] = a_storage[a_idx]
         else:
-            a_shared[pi, pj] = 0.0
-
-        if j < out_shape[-1] and (k + pi) < b_shape[-2]:
-            b_shared[pi, pj] = b_storage[
-                index_to_position((batch, k + pi, j), b_strides)
-            ]
+            a_shared[ty, tx] = 0.0
+            
+        b_row = block * BLOCK_SIZE + ty
+        b_col = col
+        if b_row < b_shape[0] and b_col < b_shape[1]:
+            b_idx = b_row * b_strides[0] + b_col * b_strides[1]
+            b_shared[ty, tx] = b_storage[b_idx]
         else:
-            b_shared[pi, pj] = 0.0
-
+            b_shared[ty, tx] = 0.0
+            
+        # Synchronize threads to ensure all data is loaded
         cuda.syncthreads()
-
-        if i < out_shape[-2] and j < out_shape[-1]:
-            for n in range(BLOCK_DIM):
-                temp += a_shared[pi, n] * b_shared[n, pj]
-
+        
+        # Compute partial dot product for this block
+        for k in range(BLOCK_SIZE):
+            acc += a_shared[ty, k] * b_shared[k, tx]
+            
+        # Synchronize before loading next block
         cuda.syncthreads()
-
-    if i < out_shape[-2] and j < out_shape[-1]:
-        out[index_to_position((batch, i, j), out_strides)] = temp
+    
+    # Write result to global memory
+    if row < out_shape[0] and col < out_shape[1]:
+        out_idx = row * out_strides[0] + col * out_strides[1]
+        out[out_idx] = acc
 
 
 tensor_matrix_multiply = jit(_tensor_matrix_multiply)
