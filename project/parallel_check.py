@@ -38,25 +38,8 @@ out, a, b = (
 tmm = minitorch.fast_ops.tensor_matrix_multiply
 
 tmm(*out.tuple(), *a.tuple(), *b.tuple())
+print(tmm.parallel_diagnostics(level=3))
 
 
-def test_4d_matrix_multiply():
-    # Test case 1: Basic 4D without broadcasting
-    a = np.random.randn(2, 3, 4, 5)  # 2 batch dims, 4x5 matrices
-    b = np.random.randn(2, 3, 5, 6)  # 2 batch dims, 5x6 matrices
-    
-    # NumPy result
-    expected = np.matmul(a, b)
-    
-    # Our implementation
-    result = minitorch.fast_ops.tensor_matrix_multiply(
-        from_numpy(a),
-        from_numpy(b)
-    )
-    
-    np.testing.assert_allclose(to_numpy(result), expected, rtol=1e-7)
-    
-    
-    print("All tests passed!")
 
-test_4d_matrix_multiply()
+

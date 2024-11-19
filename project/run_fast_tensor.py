@@ -98,6 +98,7 @@ class FastTrain:
                 y2 = minitorch.tensor(data.y)
                 correct = int(((out.detach() > 0.5) == y2).sum()[0])
                 log_fn(epoch, total_loss, correct, losses, epoch_time)
+                print()
 
 
 if __name__ == "__main__":

@@ -32,7 +32,346 @@ The files that will be synced are:
         minitorch/tensor_data.py minitorch/tensor_functions.py minitorch/tensor_ops.py minitorch/operators.py minitorch/scalar.py minitorch/scalar_functions.py minitorch/module.py minitorch/autodiff.py minitorch/module.py project/run_manual.py project/run_scalar.py project/run_tensor.py minitorch/operators.py minitorch/module.py minitorch/autodiff.py minitorch/tensor.py minitorch/datasets.py minitorch/testing.py minitorch/optim.py
 
 
+Parallel Check
+```
+MAP
+OMP: Info #276: omp_set_nested routine deprecated, please use omp_set_max_active_levels instead.
+ 
+================================================================================
+ Parallel Accelerator Optimizing:  Function tensor_map.<locals>._map, 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (163)  
+================================================================================
 
+
+Parallel loop listing for  Function tensor_map.<locals>._map, /Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (163) 
+-----------------------------------------------------------------------------|loop #ID
+    def _map(                                                                | 
+        out: Storage,                                                        | 
+        out_shape: Shape,                                                    | 
+        out_strides: Strides,                                                | 
+        in_storage: Storage,                                                 | 
+        in_shape: Shape,                                                     | 
+        in_strides: Strides,                                                 | 
+    ) -> None:                                                               | 
+      # Check if tensors are stride-aligned for fast path                    | 
+        is_aligned = True                                                    | 
+        for i in range(len(out_shape)):                                      | 
+            if (out_strides[i] != in_strides[i] or                           | 
+                out_shape[i] != in_shape[i]):                                | 
+                is_aligned = False                                           | 
+                break                                                        | 
+                                                                             | 
+        if is_aligned:                                                       | 
+            # Main parallel loop if stride-aligned                           | 
+            for i in prange(out.size):---------------------------------------| #0
+                out[i] = fn(in_storage[i])                                   | 
+        else:                                                                | 
+            # Main parallel loop                                             | 
+            for i in prange(out.size):---------------------------------------| #1
+                # All indices use numpy buffers                              | 
+                out_index = np.empty(MAX_DIMS, np.int32)                     | 
+                in_index = np.empty(MAX_DIMS, np.int32)                      | 
+                to_index(i, out_shape, out_index)                            | 
+                broadcast_index(out_index, out_shape, in_shape, in_index)    | 
+                in_position = index_to_position(in_index, in_strides)        | 
+                out_position = index_to_position(out_index, out_strides)     | 
+                out[out_position] = fn(in_storage[in_position])              | 
+--------------------------------- Fusing loops ---------------------------------
+Attempting fusion of parallel loops (combines loops with similar properties)...
+Following the attempted fusion of parallel for-loops there are 2 parallel for-
+loop(s) (originating from loops labelled: #0, #1).
+--------------------------------------------------------------------------------
+----------------------------- Before Optimisation ------------------------------
+--------------------------------------------------------------------------------
+------------------------------ After Optimisation ------------------------------
+Parallel structure is already optimal.
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+ 
+---------------------------Loop invariant code motion---------------------------
+Allocation hoisting:
+The memory allocation derived from the instruction at 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (187) is hoisted out
+ of the parallel loop labelled #1 (it will be performed before the loop is 
+executed and reused inside the loop):
+   Allocation:: out_index = np.empty(MAX_DIMS, np.int32)
+    - numpy.empty() is used for the allocation.
+The memory allocation derived from the instruction at 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (188) is hoisted out
+ of the parallel loop labelled #1 (it will be performed before the loop is 
+executed and reused inside the loop):
+   Allocation:: in_index = np.empty(MAX_DIMS, np.int32)
+    - numpy.empty() is used for the allocation.
+None
+ZIP
+ 
+================================================================================
+ Parallel Accelerator Optimizing:  Function tensor_zip.<locals>._zip, 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (222)  
+================================================================================
+
+
+Parallel loop listing for  Function tensor_zip.<locals>._zip, /Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (222) 
+---------------------------------------------------------------------------------|loop #ID
+    def _zip(                                                                    | 
+        out: Storage,                                                            | 
+        out_shape: Shape,                                                        | 
+        out_strides: Strides,                                                    | 
+        a_storage: Storage,                                                      | 
+        a_shape: Shape,                                                          | 
+        a_strides: Strides,                                                      | 
+        b_storage: Storage,                                                      | 
+        b_shape: Shape,                                                          | 
+        b_strides: Strides,                                                      | 
+    ) -> None:                                                                   | 
+                                                                                 | 
+                                                                                 | 
+        # Check if tensors are stride-aligned (moved outside parallel region)    | 
+        is_aligned = True                                                        | 
+        for i in range(len(out_shape)):                                          | 
+            if (out_strides[i] != a_strides[i] or                                | 
+                out_strides[i] != b_strides[i] or                                | 
+                out_shape[i] != a_shape[i] or                                    | 
+                out_shape[i] != b_shape[i]):                                     | 
+                is_aligned = False                                               | 
+                break                                                            | 
+                                                                                 | 
+        if is_aligned:                                                           | 
+            # Main parallel loop if stride-aligned                               | 
+            for i in prange(len(out)):-------------------------------------------| #2
+                out[i] = fn(a_storage[i], b_storage[i])                          | 
+        else:                                                                    | 
+        # Main parallel loop                                                     | 
+            for i in prange(len(out)):     --------------------------------------| #3
+                # All indices use numpy buffers                                  | 
+                out_index = np.empty(MAX_DIMS, dtype=np.int32)                   | 
+                a_index = np.empty(MAX_DIMS, dtype=np.int32)                     | 
+                b_index = np.empty(MAX_DIMS, dtype=np.int32)                     | 
+                to_index(i, out_shape, out_index)                                | 
+                broadcast_index(out_index, out_shape, a_shape, a_index)          | 
+                broadcast_index(out_index, out_shape, b_shape, b_index)          | 
+                j = index_to_position(a_index, a_strides)                        | 
+                k = index_to_position(b_index, b_strides)                        | 
+                out[i] = fn(a_storage[j], b_storage[k])                          | 
+--------------------------------- Fusing loops ---------------------------------
+Attempting fusion of parallel loops (combines loops with similar properties)...
+Following the attempted fusion of parallel for-loops there are 2 parallel for-
+loop(s) (originating from loops labelled: #2, #3).
+--------------------------------------------------------------------------------
+----------------------------- Before Optimisation ------------------------------
+--------------------------------------------------------------------------------
+------------------------------ After Optimisation ------------------------------
+Parallel structure is already optimal.
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+ 
+---------------------------Loop invariant code motion---------------------------
+Allocation hoisting:
+The memory allocation derived from the instruction at 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (253) is hoisted out
+ of the parallel loop labelled #3 (it will be performed before the loop is 
+executed and reused inside the loop):
+   Allocation:: out_index = np.empty(MAX_DIMS, dtype=np.int32)
+    - numpy.empty() is used for the allocation.
+The memory allocation derived from the instruction at 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (254) is hoisted out
+ of the parallel loop labelled #3 (it will be performed before the loop is 
+executed and reused inside the loop):
+   Allocation:: a_index = np.empty(MAX_DIMS, dtype=np.int32)
+    - numpy.empty() is used for the allocation.
+The memory allocation derived from the instruction at 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (255) is hoisted out
+ of the parallel loop labelled #3 (it will be performed before the loop is 
+executed and reused inside the loop):
+   Allocation:: b_index = np.empty(MAX_DIMS, dtype=np.int32)
+    - numpy.empty() is used for the allocation.
+None
+REDUCE
+ 
+================================================================================
+ Parallel Accelerator Optimizing:  Function tensor_reduce.<locals>._reduce, 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (287)  
+================================================================================
+
+
+Parallel loop listing for  Function tensor_reduce.<locals>._reduce, /Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (287) 
+-----------------------------------------------------------------------|loop #ID
+    def _reduce(                                                       | 
+        out: Storage,                                                  | 
+        out_shape: Shape,                                              | 
+        out_strides: Strides,                                          | 
+        a_storage: Storage,                                            | 
+        a_shape: Shape,                                                | 
+        a_strides: Strides,                                            | 
+        reduce_dim: int,                                               | 
+    ) -> None:                                                         | 
+                                                                       | 
+                                                                       | 
+        size = len(out)                                                | 
+        reduce_stride = a_strides[reduce_dim]                          | 
+                                                                       | 
+        for out_pos in prange(size):-----------------------------------| #4
+            # Outer loop: calculate indices                            | 
+            out_index = np.empty(MAX_DIMS, np.int32)                   | 
+            to_index(out_pos, out_shape, out_index)                    | 
+            base_position = index_to_position(out_index, a_strides)    | 
+                                                                       | 
+            # Inner loop: only local variables and operations          | 
+            val = out[out_pos]                                         | 
+            pos = base_position                                        | 
+            for i in range(a_shape[reduce_dim]):                       | 
+                val = fn(val, a_storage[pos])                          | 
+                pos += reduce_stride                                   | 
+                                                                       | 
+            out[out_pos] = val                                         | 
+--------------------------------- Fusing loops ---------------------------------
+Attempting fusion of parallel loops (combines loops with similar properties)...
+Following the attempted fusion of parallel for-loops there are 1 parallel for-
+loop(s) (originating from loops labelled: #4).
+--------------------------------------------------------------------------------
+----------------------------- Before Optimisation ------------------------------
+--------------------------------------------------------------------------------
+------------------------------ After Optimisation ------------------------------
+Parallel structure is already optimal.
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+ 
+---------------------------Loop invariant code motion---------------------------
+Allocation hoisting:
+The memory allocation derived from the instruction at 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (303) is hoisted out
+ of the parallel loop labelled #4 (it will be performed before the loop is 
+executed and reused inside the loop):
+   Allocation:: out_index = np.empty(MAX_DIMS, np.int32)
+    - numpy.empty() is used for the allocation.
+None
+MATRIX MULTIPLY
+ 
+================================================================================
+ Parallel Accelerator Optimizing:  Function _tensor_matrix_multiply, 
+/Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (319)  
+================================================================================
+
+
+Parallel loop listing for  Function _tensor_matrix_multiply, /Users/zzy/Desktop/CS5781/mod3-zhubzy/minitorch/fast_ops.py (319) 
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------|loop #ID
+def _tensor_matrix_multiply(                                                                                                                                        | 
+    out: Storage,                                                                                                                                                   | 
+    out_shape: Shape,                                                                                                                                               | 
+    out_strides: Strides,                                                                                                                                           | 
+    a_storage: Storage,                                                                                                                                             | 
+    a_shape: Shape,                                                                                                                                                 | 
+    a_strides: Strides,                                                                                                                                             | 
+    b_storage: Storage,                                                                                                                                             | 
+    b_shape: Shape,                                                                                                                                                 | 
+    b_strides: Strides,                                                                                                                                             | 
+) -> None:                                                                                                                                                          | 
+    """NUMBA tensor matrix multiply function.                                                                                                                       | 
+                                                                                                                                                                    | 
+    Should work for any tensor shapes that broadcast as long as                                                                                                     | 
+                                                                                                                                                                    | 
+    ```                                                                                                                                                             | 
+    assert a_shape[-1] == b_shape[-2]                                                                                                                               | 
+    ```                                                                                                                                                             | 
+                                                                                                                                                                    | 
+    Optimizations:                                                                                                                                                  | 
+                                                                                                                                                                    | 
+    * Outer loop in parallel                                                                                                                                        | 
+    * No index buffers or function calls                                                                                                                            | 
+    * Inner loop should have no global writes, 1 multiply.                                                                                                          | 
+                                                                                                                                                                    | 
+                                                                                                                                                                    | 
+    Args:                                                                                                                                                           | 
+    ----                                                                                                                                                            | 
+        out (Storage): storage for `out` tensor                                                                                                                     | 
+        out_shape (Shape): shape for `out` tensor                                                                                                                   | 
+        out_strides (Strides): strides for `out` tensor                                                                                                             | 
+        a_storage (Storage): storage for `a` tensor                                                                                                                 | 
+        a_shape (Shape): shape for `a` tensor                                                                                                                       | 
+        a_strides (Strides): strides for `a` tensor                                                                                                                 | 
+        b_storage (Storage): storage for `b` tensor                                                                                                                 | 
+        b_shape (Shape): shape for `b` tensor                                                                                                                       | 
+        b_strides (Strides): strides for `b` tensor                                                                                                                 | 
+                                                                                                                                                                    | 
+    Returns:                                                                                                                                                        | 
+    -------                                                                                                                                                         | 
+        None : Fills in `out`                                                                                                                                       | 
+                                                                                                                                                                    | 
+    """                                                                                                                                                             | 
+                                                                                                                                                                    | 
+                                                                                                                                                                    | 
+                                                                                                                                                                    | 
+                                                                                                                                                                    | 
+    a_rows = a_shape[-2]                                                                                                                                            | 
+    a_cols = a_shape[-1]                                                                                                                                            | 
+    b_cols = b_shape[-1]                                                                                                                                            | 
+    a_batch_stride = a_strides[0] if a_shape[0] > 1 else 0                                                                                                          | 
+    b_batch_stride = b_strides[0] if b_shape[0] > 1 else 0                                                                                                          | 
+    out_batch_stride = out_strides[0] if out_shape[0] > 1 else 0                                                                                                    | 
+                                                                                                                                                                    | 
+                                                                                                                                                                    | 
+    # Handle batch dimensions with parallel outer loop                                                                                                              | 
+    for batch in prange(max(1, out_shape[0])):----------------------------------------------------------------------------------------------------------------------| #8
+        # Calculate base offsets for this batch                                                                                                                     | 
+        a_batch_offset = batch * a_batch_stride                                                                                                                     | 
+        b_batch_offset = batch * b_batch_stride                                                                                                                     | 
+        out_batch_offset = batch * out_batch_stride                                                                                                                 | 
+                                                                                                                                                                    | 
+        # Core matrix multiplication for this batch                                                                                                                 | 
+        for i in prange(a_rows):------------------------------------------------------------------------------------------------------------------------------------| #7
+            for j in prange(b_cols):--------------------------------------------------------------------------------------------------------------------------------| #6
+                # Initialize sum for dot product                                                                                                                    | 
+                acc = 0.0                                                                                                                                           | 
+                # Single inner loop for dot product between row of A and column of B                                                                                | 
+                for k in prange(a_cols):----------------------------------------------------------------------------------------------------------------------------| #5
+                    acc += a_storage[a_batch_offset + i * a_strides[-2] + k * a_strides[-1]] * b_storage[b_batch_offset + k * b_strides[-2] + j * b_strides[-1]]    | 
+                                                                                                                                                                    | 
+                out[out_batch_offset + i * out_strides[-2] + j * out_strides[-1]] = acc                                                                             | 
+--------------------------------- Fusing loops ---------------------------------
+Attempting fusion of parallel loops (combines loops with similar properties)...
+Following the attempted fusion of parallel for-loops there are 2 parallel for-
+loop(s) (originating from loops labelled: #8, #7).
+--------------------------------------------------------------------------------
+---------------------------- Optimising loop nests -----------------------------
+Attempting loop nest rewrites (optimising for the largest parallel loops)...
+ 
++--8 is a parallel loop
+   +--7 --> rewritten as a serial loop
+      +--6 --> rewritten as a serial loop
+         +--5 --> rewritten as a serial loop
+--------------------------------------------------------------------------------
+----------------------------- Before Optimisation ------------------------------
+Parallel region 0:
++--8 (parallel)
+   +--7 (parallel)
+      +--6 (parallel)
+         +--5 (parallel)
+
+
+--------------------------------------------------------------------------------
+------------------------------ After Optimisation ------------------------------
+Parallel region 0:
++--8 (parallel)
+   +--7 (serial)
+      +--6 (serial)
+         +--5 (serial)
+
+
+ 
+Parallel region 0 (loop #8) had 0 loop(s) fused and 3 loop(s) serialized as part
+ of the larger parallel loop (#8).
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+ 
+---------------------------Loop invariant code motion---------------------------
+Allocation hoisting:
+No allocation hoisting found
+```
+
+
+
+
+```
 (base) (.venv) zzy@Zachs-MacBook-Pro mod3-zhubzy % python  project/run_fast_tensor.py --BACKEND cpu --HIDDEN 100 --DATASET split --RATE 0.04
 OMP: Info #276: omp_set_nested routine deprecated, please use omp_set_max_active_levels instead.
 Epoch  0  loss  56.54978760980882 correct 35
@@ -135,11 +474,12 @@ Epoch  480  loss  2.5820387022543043 correct 50
 Time  0.07248210906982422
 Epoch  490  loss  2.7244590590654 correct 50
 Time  0.06610417366027832
-
+```
 
 
 
 ### Split (Cuda)
+```
 Epoch  0  loss  31.384926076832468 correct 33
 Time  4.134276628494263
 Epoch  10  loss  27.243605283561905 correct 35
@@ -240,9 +580,10 @@ Epoch  480  loss  2.4208461048678385 correct 49
 Time  1.4443893432617188
 Epoch  490  loss  5.152384305272025 correct 50
 Time  1.4254779815673828
-
+```
 
 ### Xor (Cuda)
+```
 Epoch  0  loss  34.10347874918497 correct 28
 Time  4.272539377212524
 Epoch  10  loss  27.9609849446496 correct 41
@@ -343,3 +684,4 @@ Epoch  480  loss  2.4030599235595935 correct 50
 Time  1.3981335163116455
 Epoch  490  loss  2.11992034028144 correct 50
 Time  1.3351004123687744
+```
