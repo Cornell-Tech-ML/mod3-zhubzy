@@ -5,6 +5,7 @@ import time
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 FastTensorBackend = minitorch.TensorBackend(minitorch.FastOps)
 GPUBackend = minitorch.TensorBackend(minitorch.CudaOps)
@@ -60,6 +61,15 @@ def plot_timing_results(times):
                     ha='center')
     
     plt.tight_layout()
+    
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f'matmul_timing_{timestamp}.png'
+    
+    # Save the plot with high DPI for better quality
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    print(f"Graph saved as: {filename}")
+    
     return plt
 
 
@@ -102,6 +112,6 @@ if __name__ == "__main__":
         for b, t in stimes.items():
             print(f"    {b}: {t:.5f}")
             
-    # Create and show the plot
+    # Create and save the plot
     plt = plot_timing_results(times)
-    plt.show()
+    plt.show()  # Still show the plot in addition to saving it
