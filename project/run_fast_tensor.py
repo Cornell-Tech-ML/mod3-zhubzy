@@ -49,7 +49,7 @@ class Linear(minitorch.Module):
     def forward(self, x):
         # Perform the linear transformation
         return x @ self.weights.value + self.bias.value
-        
+
 
 class FastTrain:
     def __init__(self, hidden_layers, backend=FastTensorBackend):
@@ -97,7 +97,7 @@ class FastTrain:
                 out = self.model.forward(X).view(y.shape[0])
                 y2 = minitorch.tensor(data.y)
                 correct = int(((out.detach() > 0.5) == y2).sum()[0])
-                log_fn(epoch, total_loss, correct, losses, epoch_time)
+                log_fn(epoch, total_loss / BATCH, correct, losses, epoch_time)
                 print()
 
 

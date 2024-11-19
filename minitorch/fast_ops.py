@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from typing import Callable, Optional
 
     from .tensor import Tensor
-    from .tensor_data import Index, Shape, Storage, Strides
+    from .tensor_data import Shape, Storage, Strides
 
 # TIP: Use `NUMBA_DISABLE_JIT=1 pytest tests/ -m task3_1` to run these tests without JIT.
 
@@ -30,6 +30,7 @@ Fn = TypeVar("Fn")
 
 
 def njit(fn: Fn, **kwargs: Any) -> Fn:
+    """A wrapper around numba's njit that marks functions as always inlinable."""
     return _njit(inline="always", **kwargs)(fn)  # type: ignore
 
 
@@ -168,11 +169,10 @@ def tensor_map(
         in_shape: Shape,
         in_strides: Strides,
     ) -> None:
-      # Check if tensors are stride-aligned for fast path
+        # Check if tensors are stride-aligned for fast path
         is_aligned = True
         for i in range(len(out_shape)):
-            if (out_strides[i] != in_strides[i] or
-                out_shape[i] != in_shape[i]):
+            if out_strides[i] != in_strides[i] or out_shape[i] != in_shape[i]:
                 is_aligned = False
                 break
 
@@ -192,7 +192,6 @@ def tensor_map(
                 out_position = index_to_position(out_index, out_strides)
                 out[out_position] = fn(in_storage[in_position])
 
-    
     return njit(_map, parallel=True)  # type: ignore
 
 
@@ -230,15 +229,15 @@ def tensor_zip(
         b_shape: Shape,
         b_strides: Strides,
     ) -> None:
-    
-
         # Check if tensors are stride-aligned (moved outside parallel region)
         is_aligned = True
         for i in range(len(out_shape)):
-            if (out_strides[i] != a_strides[i] or
-                out_strides[i] != b_strides[i] or
-                out_shape[i] != a_shape[i] or
-                out_shape[i] != b_shape[i]):
+            if (
+                out_strides[i] != a_strides[i]
+                or out_strides[i] != b_strides[i]
+                or out_shape[i] != a_shape[i]
+                or out_shape[i] != b_shape[i]
+            ):
                 is_aligned = False
                 break
 
@@ -247,8 +246,8 @@ def tensor_zip(
             for i in prange(len(out)):
                 out[i] = fn(a_storage[i], b_storage[i])
         else:
-        # Main parallel loop
-            for i in prange(len(out)):     
+            # Main parallel loop
+            for i in prange(len(out)):
                 # All indices use numpy buffers
                 out_index = np.empty(MAX_DIMS, dtype=np.int32)
                 a_index = np.empty(MAX_DIMS, dtype=np.int32)
@@ -293,8 +292,6 @@ def tensor_reduce(
         a_strides: Strides,
         reduce_dim: int,
     ) -> None:
-
-
         size = len(out)
         reduce_stride = a_strides[reduce_dim]
 
@@ -303,14 +300,14 @@ def tensor_reduce(
             out_index = np.empty(MAX_DIMS, np.int32)
             to_index(out_pos, out_shape, out_index)
             base_position = index_to_position(out_index, a_strides)
-            
+
             # Inner loop: only local variables and operations
             val = out[out_pos]
             pos = base_position
             for i in range(a_shape[reduce_dim]):
                 val = fn(val, a_storage[pos])
                 pos += reduce_stride
-            
+
             out[out_pos] = val
 
     return njit(_reduce, parallel=True)  # type: ignore
@@ -359,17 +356,12 @@ def _tensor_matrix_multiply(
         None : Fills in `out`
 
     """
-
-
-
-
     a_rows = a_shape[-2]
     a_cols = a_shape[-1]
     b_cols = b_shape[-1]
     a_batch_stride = a_strides[0] if a_shape[0] > 1 else 0
     b_batch_stride = b_strides[0] if b_shape[0] > 1 else 0
     out_batch_stride = out_strides[0] if out_shape[0] > 1 else 0
-    
 
     # Handle batch dimensions with parallel outer loop
     for batch in prange(max(1, out_shape[0])):
@@ -377,7 +369,7 @@ def _tensor_matrix_multiply(
         a_batch_offset = batch * a_batch_stride
         b_batch_offset = batch * b_batch_stride
         out_batch_offset = batch * out_batch_stride
-        
+
         # Core matrix multiplication for this batch
         for i in prange(a_rows):
             for j in prange(b_cols):
@@ -385,8 +377,15 @@ def _tensor_matrix_multiply(
                 acc = 0.0
                 # Single inner loop for dot product between row of A and column of B
                 for k in prange(a_cols):
-                    acc += a_storage[a_batch_offset + i * a_strides[-2] + k * a_strides[-1]] * b_storage[b_batch_offset + k * b_strides[-2] + j * b_strides[-1]]
-                
+                    acc += (
+                        a_storage[
+                            a_batch_offset + i * a_strides[-2] + k * a_strides[-1]
+                        ]
+                        * b_storage[
+                            b_batch_offset + k * b_strides[-2] + j * b_strides[-1]
+                        ]
+                    )
+
                 out[out_batch_offset + i * out_strides[-2] + j * out_strides[-1]] = acc
 
 

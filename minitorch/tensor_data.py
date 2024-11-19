@@ -51,6 +51,7 @@ def index_to_position(index: Index, strides: Strides) -> int:
         position += ind * stride
     return position
 
+
 def to_index(ordinal: int, shape: Shape, out_index: OutIndex) -> None:
     """Convert an `ordinal` to an index in the `shape`.
     Should ensure that enumerating position 0 ... size of a
